@@ -1,84 +1,60 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Security.Cryptography;
-using System.Text;
-using System.Windows.Forms;
 using Newtonsoft.Json;
 
 namespace NGUSaveConvert
 {
-    internal class Program
+    internal static class Program
     {
         [STAThread]
         private static void Main(string[] args)
         {
-            var data = ReadSaveData();
-            if (data == null)
-                return;
-
-            using (var dialog = new SaveFileDialog())
+            var savedir = args.Length > 0 ? args[0] : Environment.ExpandEnvironmentVariables("%appdata%\\..\\locallow\\ngu industries\\ngu idle\\");
+            var d = new DirectoryInfo(savedir);
+            Directory.CreateDirectory(savedir + "/json");
+            foreach (var savefile in d.GetFiles("*.txt"))
             {
-                dialog.InitialDirectory =
-                    Environment.ExpandEnvironmentVariables("%appdata%\\..\\locallow\\ngu industries\\ngu idle\\");
-                dialog.FileName = "NGUSave.json";
-                dialog.Filter = "json files (*.json)|*.json|All files (*.*)|*.*";
-                dialog.Title = "Save JSON";
-                dialog.RestoreDirectory = true;
-                dialog.ShowDialog();
+                Console.WriteLine("Converting " + savefile.Name);
+                var data = ReadSaveData(savefile.FullName);
 
-                if (dialog.FileName != "")
-                {
-                    File.WriteAllText(dialog.FileName, data);
-                }
+                if (data == null)
+                    return;
+
+                File.WriteAllText(savefile.DirectoryName +"/json/"+ savefile.Name + ".json", data);
             }
         }
 
-        private static string ReadSaveData()
+        private static string ReadSaveData(string infile = "")
         {
-            using (var dialog = new System.Windows.Forms.OpenFileDialog())
+            var path = infile;
+            
+            if (!File.Exists(path))
             {
-                var ngupath = Path.GetFullPath(Environment.ExpandEnvironmentVariables("%appdata%\\..\\locallow\\ngu industries\\ngu idle\\"));
-                dialog.InitialDirectory = ngupath;
-                
-                dialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
-                dialog.RestoreDirectory = true;
+                Console.WriteLine("Bad filepath");
+                return null;
+            }
 
-                if (dialog.ShowDialog() == DialogResult.OK)
+            try
+            {
+                var content = File.ReadAllText(path);
+                var data = DeserializeBase64<SaveData>(content);
+                var checksum = GetChecksum(data.playerData);
+                if (checksum != data.checksum)
                 {
-                    var path = dialog.FileName;
-                    if (!File.Exists(path))
-                    {
-                        Console.WriteLine("Bad filepath");
-                        return null;
-                    }
-
-                    try
-                    {
-                        var content = File.ReadAllText(path);
-                        var data = DeserializeBase64<SaveData>(content);
-                        var checksum = GetChecksum(data.playerData);
-                        if (checksum != data.checksum)
-                        {
-                            Console.WriteLine("Bad checksum");
-                            return null;
-                        }
-
-                        var playerData = DeserializeBase64<PlayerData>(data.playerData);
-
-                        var jsonData = JsonConvert.SerializeObject(playerData);
-                        return jsonData;
-                    }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine(e);
-                        return null;
-                    }
+                    Console.WriteLine("Bad checksum");
+                    return null;
                 }
 
+                var playerData = DeserializeBase64<PlayerData>(data.playerData);
+
+                var jsonData = JsonConvert.SerializeObject(playerData);
+                return jsonData;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
                 return null;
             }
         }
